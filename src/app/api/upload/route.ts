@@ -16,6 +16,7 @@ export async function POST(request: Request): Promise<NextResponse> {
             "video/x-matroska",
           ],
           maximumSizeInBytes: 500 * 1024 * 1024, // 500MB
+          addRandomSuffix: false,
         };
       },
       onUploadCompleted: async () => {

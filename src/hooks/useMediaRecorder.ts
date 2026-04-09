@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { upload } from "@vercel/blob/client";
-import { getPreferredMimeType, getFileExtension } from "@/lib/utils";
+import { getPreferredMimeType } from "@/lib/utils";
 
 export type RecordingStatus =
   | "idle"
@@ -210,9 +210,10 @@ export function useMediaRecorder(): UseMediaRecorderReturn {
       setStatus("uploading");
       setError(null);
 
-      const mimeType = recordedBlob.type;
-      const ext = getFileExtension(mimeType);
-      const filename = `recording-${Date.now()}.${ext}`;
+      // Get next sequential ID from server
+      const res = await fetch("/api/next-id");
+      const { id } = await res.json();
+      const filename = `${id}.webm`;
 
       const blob = await upload(filename, recordedBlob, {
         access: "public",

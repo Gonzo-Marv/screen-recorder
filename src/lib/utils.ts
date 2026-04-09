@@ -18,8 +18,3 @@ export function getPreferredMimeType(): string {
   }
   return "";
 }
-
-export function getFileExtension(mimeType: string): string {
-  if (mimeType.includes("mp4")) return "mp4";
-  return "webm";
-}

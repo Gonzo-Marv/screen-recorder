@@ -5,8 +5,8 @@ const BLOB_BASE_URL = process.env.BLOB_BASE_URL;
 function getBlobUrl(id: string): string | null {
   if (!BLOB_BASE_URL) return null;
   const pathname = decodeURIComponent(id);
-  // Basic validation: only allow filenames with expected characters
-  if (!/^[\w.-]+$/.test(pathname)) return null;
+  // Only allow filenames like "1.webm", "42.webm"
+  if (!/^\d+\.webm$/.test(pathname)) return null;
   return `${BLOB_BASE_URL}/${pathname}`;
 }
 
