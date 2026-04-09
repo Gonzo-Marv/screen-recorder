@@ -6,19 +6,6 @@ export function formatDuration(seconds: number): string {
   return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
-export function encodeWatchId(blobUrl: string): string {
-  return btoa(blobUrl)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
-
-export function decodeWatchId(id: string): string {
-  const base64 = id.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-  return atob(padded);
-}
-
 export function getPreferredMimeType(): string {
   const types = [
     "video/webm;codecs=vp9,opus",

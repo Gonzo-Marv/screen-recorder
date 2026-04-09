@@ -2,11 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { upload } from "@vercel/blob/client";
-import {
-  getPreferredMimeType,
-  getFileExtension,
-  encodeWatchId,
-} from "@/lib/utils";
+import { getPreferredMimeType, getFileExtension } from "@/lib/utils";
 
 export type RecordingStatus =
   | "idle"
@@ -224,7 +220,9 @@ export function useMediaRecorder(): UseMediaRecorderReturn {
       });
 
       setShareUrl(blob.url);
-      setWatchPath(`/watch/${encodeWatchId(blob.url)}`);
+      // Use just the pathname (filename) for a short URL
+      const blobPathname = new URL(blob.url).pathname.slice(1); // remove leading /
+      setWatchPath(`/watch/${blobPathname}`);
       setStatus("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");

@@ -1,18 +1,13 @@
 import type { Metadata } from "next";
 
-function decodeWatchId(id: string): string {
-  const base64 = id.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-  return Buffer.from(padded, "base64").toString("utf-8");
-}
+const BLOB_BASE_URL = process.env.BLOB_BASE_URL;
 
-function isValidBlobUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.hostname.endsWith(".blob.vercel-storage.com");
-  } catch {
-    return false;
-  }
+function getBlobUrl(id: string): string | null {
+  if (!BLOB_BASE_URL) return null;
+  const pathname = decodeURIComponent(id);
+  // Basic validation: only allow filenames with expected characters
+  if (!/^[\w.-]+$/.test(pathname)) return null;
+  return `${BLOB_BASE_URL}/${pathname}`;
 }
 
 type Params = Promise<{ id: string }>;
@@ -23,9 +18,9 @@ export async function generateMetadata({
   params: Params;
 }): Promise<Metadata> {
   const { id } = await params;
-  const blobUrl = decodeWatchId(decodeURIComponent(id));
+  const blobUrl = getBlobUrl(id);
 
-  if (!isValidBlobUrl(blobUrl)) {
+  if (!blobUrl) {
     return { title: "Not Found" };
   }
 
@@ -43,16 +38,19 @@ export async function generateMetadata({
 
 export default async function WatchPage({ params }: { params: Params }) {
   const { id } = await params;
-  const blobUrl = decodeWatchId(decodeURIComponent(id));
+  const blobUrl = getBlobUrl(id);
 
-  if (!isValidBlobUrl(blobUrl)) {
+  if (!blobUrl) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-zinc-950">
         <div className="text-center">
           <h1 className="text-xl font-bold text-zinc-100">
             Recording not found
           </h1>
-          <a href="/" className="mt-4 inline-block text-sm text-blue-400 hover:underline">
+          <a
+            href="/"
+            className="mt-4 inline-block text-sm text-blue-400 hover:underline"
+          >
             Record your own
           </a>
         </div>
