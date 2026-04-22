@@ -8,6 +8,7 @@ import { RecordingControls } from "@/components/RecordingControls";
 export default function Home() {
   const {
     status,
+    countdown,
     audioDevices,
     selectedAudioDeviceId,
     setSelectedAudioDeviceId,
@@ -44,10 +45,12 @@ export default function Home() {
           mediaStream={mediaStream}
           recordedBlob={recordedBlob}
           status={status}
+          countdown={countdown}
         />
 
         <RecordingControls
           status={status}
+          countdown={countdown}
           duration={duration}
           watchPath={watchPath}
           error={error}

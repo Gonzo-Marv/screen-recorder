@@ -6,12 +6,14 @@ interface RecordingPreviewProps {
   mediaStream: MediaStream | null;
   recordedBlob: Blob | null;
   status: string;
+  countdown: number | null;
 }
 
 export function RecordingPreview({
   mediaStream,
   recordedBlob,
   status,
+  countdown,
 }: RecordingPreviewProps) {
   const liveRef = useRef<HTMLVideoElement>(null);
   const playbackRef = useRef<HTMLVideoElement>(null);
@@ -36,15 +38,24 @@ export function RecordingPreview({
     );
   }
 
-  if (status === "recording") {
+  if (status === "countdown" || status === "recording") {
     return (
-      <video
-        ref={liveRef}
-        autoPlay
-        muted
-        playsInline
-        className="aspect-video w-full rounded-xl border border-zinc-800 bg-black object-contain"
-      />
+      <div className="relative">
+        <video
+          ref={liveRef}
+          autoPlay
+          muted
+          playsInline
+          className="aspect-video w-full rounded-xl border border-zinc-800 bg-black object-contain"
+        />
+        {status === "countdown" && countdown !== null && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/50">
+            <span className="text-9xl font-bold text-white drop-shadow-lg">
+              {countdown}
+            </span>
+          </div>
+        )}
+      </div>
     );
   }
 

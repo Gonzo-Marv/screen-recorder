@@ -2,10 +2,12 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { upload } from "@vercel/blob/client";
+import fixWebmDuration from "fix-webm-duration";
 import { getPreferredMimeType } from "@/lib/utils";
 
 export type RecordingStatus =
   | "idle"
+  | "countdown"
   | "recording"
   | "stopped"
   | "uploading"
@@ -14,6 +16,7 @@ export type RecordingStatus =
 
 export interface UseMediaRecorderReturn {
   status: RecordingStatus;
+  countdown: number | null;
   audioDevices: MediaDeviceInfo[];
   selectedAudioDeviceId: string | null;
   setSelectedAudioDeviceId: (id: string | null) => void;
@@ -31,6 +34,7 @@ export interface UseMediaRecorderReturn {
 
 export function useMediaRecorder(): UseMediaRecorderReturn {
   const [status, setStatus] = useState<RecordingStatus>("idle");
+  const [countdown, setCountdown] = useState<number | null>(null);
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedAudioDeviceId, setSelectedAudioDeviceId] = useState<
     string | null
@@ -48,12 +52,14 @@ export function useMediaRecorder(): UseMediaRecorderReturn {
   const screenStreamRef = useRef<MediaStream | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const mimeTypeRef = useRef<string>("");
+  const combinedStreamRef = useRef<MediaStream | null>(null);
+  const recordingStartTimeRef = useRef<number>(0);
 
   // Enumerate audio devices on mount
   useEffect(() => {
     async function init() {
       try {
-        // Request mic permission to get device labels
         const tempStream = await navigator.mediaDevices.getUserMedia({
           audio: true,
         });
@@ -66,7 +72,6 @@ export function useMediaRecorder(): UseMediaRecorderReturn {
           setSelectedAudioDeviceId(audioInputs[0].deviceId);
         }
       } catch {
-        // Mic permission denied — still allow recording without audio
         setAudioDevices([]);
       }
     }
@@ -86,6 +91,8 @@ export function useMediaRecorder(): UseMediaRecorderReturn {
     screenStreamRef.current = null;
     micStreamRef.current = null;
     audioContextRef.current = null;
+    combinedStreamRef.current = null;
+    mimeTypeRef.current = "";
     setMediaStream(null);
   }, []);
 
@@ -98,37 +105,87 @@ export function useMediaRecorder(): UseMediaRecorderReturn {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Countdown effect — ticks 3→2→1→0, then starts recording
+  useEffect(() => {
+    if (status !== "countdown" || countdown === null) return;
+
+    if (countdown === 0) {
+      const mimeType = mimeTypeRef.current;
+      const combinedStream = combinedStreamRef.current;
+      if (!combinedStream || !mimeType) return;
+
+      const recorder = new MediaRecorder(combinedStream, { mimeType });
+      recorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const durationMs = Date.now() - recordingStartTimeRef.current;
+        const rawBlob = new Blob(chunksRef.current, { type: mimeType });
+
+        // Fix WebM duration metadata so progress bar works
+        let finalBlob = rawBlob;
+        if (mimeType.startsWith("video/webm")) {
+          try {
+            finalBlob = await fixWebmDuration(rawBlob, durationMs);
+          } catch {
+            finalBlob = rawBlob;
+          }
+        }
+
+        setRecordedBlob(finalBlob);
+        setStatus("stopped");
+        cleanup();
+      };
+
+      recorder.start(1000);
+      recordingStartTimeRef.current = Date.now();
+      setStatus("recording");
+      setDuration(0);
+      setCountdown(null);
+      timerRef.current = setInterval(() => {
+        setDuration((d) => d + 1);
+      }, 1000);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setCountdown((c) => (c !== null ? c - 1 : null));
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [status, countdown, cleanup]);
+
   const startRecording = useCallback(async () => {
     try {
       setError(null);
       chunksRef.current = [];
 
-      // Get screen stream
+      // Get screen stream — browser shows native picker
       const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
-        audio: true, // Request tab/system audio
+        audio: true,
       });
       screenStreamRef.current = screenStream;
 
       // Build combined stream
       const combinedStream = new MediaStream();
-
-      // Add video track from screen
       screenStream.getVideoTracks().forEach((t) => combinedStream.addTrack(t));
 
-      // Combine audio sources
       const audioContext = new AudioContext();
       audioContextRef.current = audioContext;
       const destination = audioContext.createMediaStreamDestination();
 
-      // Add screen audio (tab audio) if available
       if (screenStream.getAudioTracks().length > 0) {
         const screenAudioSource =
           audioContext.createMediaStreamSource(screenStream);
         screenAudioSource.connect(destination);
       }
 
-      // Add mic audio if a device is selected
       if (selectedAudioDeviceId) {
         try {
           const micStream = await navigator.mediaDevices.getUserMedia({
@@ -142,53 +199,39 @@ export function useMediaRecorder(): UseMediaRecorderReturn {
         }
       }
 
-      // Add mixed audio track
       destination.stream
         .getAudioTracks()
         .forEach((t) => combinedStream.addTrack(t));
 
-      setMediaStream(combinedStream);
-
-      // Create recorder
       const mimeType = getPreferredMimeType();
       if (!mimeType) {
         throw new Error("No supported video recording format found");
       }
 
-      const recorder = new MediaRecorder(combinedStream, { mimeType });
-      recorderRef.current = recorder;
+      // Store in refs for the countdown effect to use
+      mimeTypeRef.current = mimeType;
+      combinedStreamRef.current = combinedStream;
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunksRef.current.push(e.data);
-        }
-      };
-
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: mimeType });
-        setRecordedBlob(blob);
-        setStatus("stopped");
-        cleanup();
-      };
-
-      // Auto-stop when user clicks browser "Stop sharing"
+      // Handle "Stop sharing" during countdown or recording
       screenStream.getVideoTracks()[0].addEventListener("ended", () => {
         if (recorderRef.current?.state === "recording") {
           recorderRef.current.stop();
+        } else {
+          // Stopped during countdown — go back to idle
+          cleanup();
+          setCountdown(null);
+          setStatus("idle");
         }
       });
 
-      recorder.start(1000);
-      setStatus("recording");
-      setDuration(0);
-      timerRef.current = setInterval(() => {
-        setDuration((d) => d + 1);
-      }, 1000);
+      setMediaStream(combinedStream);
+      setStatus("countdown");
+      setCountdown(3);
     } catch (err) {
       cleanup();
       if (err instanceof DOMException && err.name === "NotAllowedError") {
         setStatus("idle");
-        return; // User cancelled the picker, don't show error
+        return;
       }
       setError(
         err instanceof Error ? err.message : "Failed to start recording"
@@ -210,7 +253,6 @@ export function useMediaRecorder(): UseMediaRecorderReturn {
       setStatus("uploading");
       setError(null);
 
-      // Get next sequential ID from server
       const res = await fetch("/api/next-id");
       const { id } = await res.json();
       const filename = `${id}.webm`;
@@ -221,8 +263,7 @@ export function useMediaRecorder(): UseMediaRecorderReturn {
       });
 
       setShareUrl(blob.url);
-      // Use just the pathname (filename) for a short URL
-      const blobPathname = new URL(blob.url).pathname.slice(1); // remove leading /
+      const blobPathname = new URL(blob.url).pathname.slice(1);
       setWatchPath(`/watch/${blobPathname}`);
       setStatus("done");
     } catch (err) {
@@ -236,6 +277,7 @@ export function useMediaRecorder(): UseMediaRecorderReturn {
     recorderRef.current = null;
     chunksRef.current = [];
     setStatus("idle");
+    setCountdown(null);
     setRecordedBlob(null);
     setShareUrl(null);
     setWatchPath(null);
@@ -245,6 +287,7 @@ export function useMediaRecorder(): UseMediaRecorderReturn {
 
   return {
     status,
+    countdown,
     audioDevices,
     selectedAudioDeviceId,
     setSelectedAudioDeviceId,

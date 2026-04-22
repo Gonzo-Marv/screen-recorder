@@ -6,6 +6,7 @@ import type { RecordingStatus } from "@/hooks/useMediaRecorder";
 
 interface RecordingControlsProps {
   status: RecordingStatus;
+  countdown: number | null;
   duration: number;
   watchPath: string | null;
   error: string | null;
@@ -17,6 +18,7 @@ interface RecordingControlsProps {
 
 export function RecordingControls({
   status,
+  countdown,
   duration,
   watchPath,
   error,
@@ -34,6 +36,12 @@ export function RecordingControls({
         >
           Start Recording
         </button>
+      )}
+
+      {status === "countdown" && countdown !== null && (
+        <p className="text-lg font-semibold text-zinc-300">
+          Recording starts in {countdown}...
+        </p>
       )}
 
       {status === "recording" && (
